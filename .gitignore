@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+#Data folder
+data/
+tfrecord_data/
+.data/
+.tfrecord_data/
