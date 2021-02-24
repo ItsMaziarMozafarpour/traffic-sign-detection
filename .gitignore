@@ -129,7 +129,5 @@ dmypy.json
 .pyre/
 
 #Data folder
+tfrecord/
 data/
-tfrecord_data/
-.data/
-.tfrecord_data/
