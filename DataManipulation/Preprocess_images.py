@@ -52,6 +52,9 @@ for current_dir , dirs ,files in os.walk(IMAGES_DIR):
 # ---------------------------------------------------------------
 final_df = final_df[~final_df.index.duplicated(keep='first')]
 final_df.sort_index(inplace=True)
+for i in range(len(final_df)):
+    final_df['path'][i] = final_df['path'][i] + '.jpg'
+final_df.to_csv('../data/TrainIJCNN2013/final_df.csv',index=False)
 # ---------------------------------------------------------------
 # Creating annotaion files for each image :
 def create_root(filename, width, height):
@@ -202,5 +205,3 @@ def create_tfrecord(data_dir,tfrecord_path,n_shards=10,split=None,class_map_dir=
             writers[shard].write(tfrecord_example.SerializeToString())
     return paths
 # ---------------------------------------------------------------
-# train_tfrecord = create_tfrecord(data_dir=DATA_DIR,tfrecord_path=TRAIN_TFRECORD_OUTPUT,split='train')
-# valid_tfrecord = create_tfrecord(data_dir=DATA_DIR,tfrecord_path=VALID_TFRECORD_OUTPUT,split='valid')
