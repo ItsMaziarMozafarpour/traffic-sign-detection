@@ -131,3 +131,6 @@ dmypy.json
 #Data folder
 tfrecord/
 data/
+
+.idea/
+idea/
