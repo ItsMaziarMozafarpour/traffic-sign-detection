@@ -74,4 +74,77 @@ def Darknet(name=None):
     x = DarknetBlock(x, 1024, 4)
     return Model(inputs, (x_36, x_61, x), name=name)
 
+
 # --------------------------------------------------------------------------
+def DarkntTiny(name=None):
+    x = inputs = Input([None, None, 3])
+    x = DarknetConv(x, 16, 3)
+    x = MaxPool2D(2, 2, 'same')(x)
+    x = DarknetConv(x, 32, 3)
+    x = MaxPool2D(2, 2, 'same')(x)
+    x = DarknetConv(x, 64, 3)
+    x = MaxPool2D(2, 2, 'same')(x)
+    x = DarknetConv(x, 128, 3)
+    x = MaxPool2D(2, 2, 'same')(x)
+    x = x_8 = DarknetConv(x, 256, 3)
+    x = MaxPool2D(2, 2, 'same')(x)
+    x = DarknetConv(x, 512, 3)
+    x = MaxPool2D(2, 1, 'same')(x)
+    x = DarknetConv(x, 512, 3)
+    return Model(inputs, (x, x_8), name=name)
+
+
+# --------------------------------------------------------------------------
+def YoloConv(filters, name=None):
+    def yolo_conv(x_in):
+        if isinstance(x_in, tuple):
+            inputs = Input(x_in[0].shape[1:]), Input(x_in[1].shape[1:])
+            x, x_skip = inputs
+            x = DarknetConv(x, filters, 1)
+            x = UpSampling2D(2)(x)
+            x = concatenate()([x, x_skip])
+        else:
+            x = inputs = Input(x_in.shape[1:])
+
+        x = DarknetConv(x, filters, 1)
+        x = DarknetConv(x, filters * 2, 3)
+        x = DarknetConv(x, filters, 1)
+        x = DarknetConv(x, filters * 2, 3)
+        x = DarknetConv(x, filters, 1)
+        return Model(inputs, x, name=x)(x_in)
+
+    return yolo_conv
+
+
+# --------------------------------------------------------------------------
+def YoloConvTiny(filters, name=None):
+    def yolo_conv_tiny(x_in):
+        if isinstance(x_in, tuple):
+            inputs = Input(x_in[0].shape[1:]), Input(x_in[1].shape[1:])
+            x, x_skip = inputs
+
+            x = DarknetConv(x, filters, 1)
+            x = UpSampling2D(2)(x)
+            x = concatenate()([x, x_skip])
+        else:
+            x = inputs = Input(x_in.shape[1:])
+            x = DarknetConv(x, filters, 1)
+        return Model(inputs, x, name=name)(x_in)
+
+    return yolo_conv_tiny
+
+
+# --------------------------------------------------------------------------
+def YoloOutput(filters, anchors, classes, name=None):
+    def yolo_output(x_in):
+        x = inputs = Input(x_in.shape[1:])
+        x = DarknetConv(x, filters * 2, 1)
+        x = DarknetConv(x, anchors * (5 + classes), 1, batch_norm=False)
+        x = Lambda(lambda x: tf.reshape(x, (-1, tf.shape(x)[1], tf.shape(x)[1],
+                                            anchors, classes + 5)))(x)
+        return Model(inputs, x, name=name)(x_in)
+
+    return yolo_output
+
+# --------------------------------------------------------------------------
+
