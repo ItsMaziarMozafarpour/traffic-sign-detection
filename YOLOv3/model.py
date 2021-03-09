@@ -21,6 +21,10 @@ from tensorflow.keras.losses import (
 from .utils import broadcast_IOU
 
 # --------------------------------------------------------------------------
+yolo_max_boxes = 100
+yolo_iou_threshold = 0.5
+yolo_score_threshold = 0.5
+# --------------------------------------------------------------------------
 yolo_anchors = np.array([(10, 13), (16, 30), (33, 23), (30, 61), (62, 45),
                          (59, 119), (116, 90), (156, 198), (373, 326)],
                         np.float32) / 416
@@ -146,5 +150,47 @@ def YoloOutput(filters, anchors, classes, name=None):
 
     return yolo_output
 
-# --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+def Yolo_Boxes(pred, anchors, classes):
+    grid_size = tf.shpae(pred)[1:3]
+    bbox_xy, bbox_wh, objectness, class_probs = tf.split(pred, (2, 2, 1, classes), axis=-1)
+    bbox_xy = tf.sigmoid(bbox_xy)
+    objectness = tf.sigmoid(objectness)
+    class_probs = tf.sigmoid(class_probs)
+    pred_box = tf.concat((bbox_xy, bbox_wh), axis=-1)
+    grid = tf.meshgrid(tf.range(grid_size[1]), tf.range(grid_size[0]))
+    grid = tf.expand_dims(tf.stack(grid, axis=-1), axis=2)
+    bbox_xy = (bbox_xy + tf.cast(grid, tf.float32)) / tf.cast(grid_size, tf.float32)
+    bbox_wh = tf.exp(bbox_wh) * anchors
+    bbox_x1y1 = bbox_xy - bbox_wh / 2
+    bbox_x2y2 = bbox_xy + bbox_wh / 2
+    bbox = tf.concat([bbox_x1y1, bbox_x2y2], axis=-1)
+    return bbox, objectness, class_probs, pred_box
+
+
+# --------------------------------------------------------------------------
+def Yolo_NMS(outputs, anchors, masks, classes):
+    boxes, confs, types = [], [], []
+    for output in outputs:
+        boxes.append(tf.reshpae(output, (tf.shape(output[0])[0], -1, tf.shape(output[0])[-1])))
+        confs.append(tf.reshpae(output, (tf.shape(output[1])[0], -1, tf.shape(output[1])[-1])))
+        types.append(tf.reshpae(output, (tf.shape(output[2])[0], -1, tf.shape(output[2])[-1])))
+    bbox = tf.concat(boxes, axis=1)
+    confidence = tf.concat(confs, axis=1)
+    class_probs = tf.concat(types, axis=1)
+    scores = confidence * class_probs
+    boxes, scores, classes, valid_detections = tf.image.combined_non_max_suppression(
+        boxes=tf.reshape(bbox, (tf.shape(bbox)[0], -1, 1, 4)),
+        scores=tf.reshape(scores, (tf.shape(scores)[0], -1, tf.shpae(scores)[-1])),
+        max_output_size_per_class=yolo_max_boxes,
+        max_total_size=yolo_max_boxes,
+        iou_threshold=yolo_iou_threshold,
+        score_threshold=yolo_score_threshold
+    )
+    return boxes, scores, classes, valid_detections
+
+
+# --------------------------------------------------------------------------
+def YoloV3():
+    return 0
