@@ -80,7 +80,7 @@ def Darknet(name=None):
 
 
 # --------------------------------------------------------------------------
-def DarkntTiny(name=None):
+def DarknetTiny(name=None):
     x = inputs = Input([None, None, 3])
     x = DarknetConv(x, 16, 3)
     x = MaxPool2D(2, 2, 'same')(x)
@@ -153,7 +153,7 @@ def YoloOutput(filters, anchors, classes, name=None):
 
 # --------------------------------------------------------------------------
 def Yolo_Boxes(pred, anchors, classes):
-    grid_size = tf.shpae(pred)[1:3]
+    grid_size = tf.shape(pred)[1:3]
     bbox_xy, bbox_wh, objectness, class_probs = tf.split(pred, (2, 2, 1, classes), axis=-1)
     bbox_xy = tf.sigmoid(bbox_xy)
     objectness = tf.sigmoid(objectness)
@@ -172,25 +172,77 @@ def Yolo_Boxes(pred, anchors, classes):
 # --------------------------------------------------------------------------
 def Yolo_NMS(outputs, anchors, masks, classes):
     boxes, confs, types = [], [], []
+
     for output in outputs:
-        boxes.append(tf.reshpae(output, (tf.shape(output[0])[0], -1, tf.shape(output[0])[-1])))
-        confs.append(tf.reshpae(output, (tf.shape(output[1])[0], -1, tf.shape(output[1])[-1])))
-        types.append(tf.reshpae(output, (tf.shape(output[2])[0], -1, tf.shape(output[2])[-1])))
+        boxes.append(tf.reshape(output[0], (tf.shape(output[0])[0], -1, tf.shape(output[0])[-1])))
+        confs.append(tf.reshape(output[1], (tf.shape(output[1])[0], -1, tf.shape(output[1])[-1])))
+        types.append(tf.reshape(output[2], (tf.shape(output[2])[0], -1, tf.shape(output[2])[-1])))
+
     bbox = tf.concat(boxes, axis=1)
     confidence = tf.concat(confs, axis=1)
     class_probs = tf.concat(types, axis=1)
+
     scores = confidence * class_probs
     boxes, scores, classes, valid_detections = tf.image.combined_non_max_suppression(
         boxes=tf.reshape(bbox, (tf.shape(bbox)[0], -1, 1, 4)),
-        scores=tf.reshape(scores, (tf.shape(scores)[0], -1, tf.shpae(scores)[-1])),
+        scores=tf.reshape(
+            scores, (tf.shape(scores)[0], -1, tf.shape(scores)[-1])),
         max_output_size_per_class=yolo_max_boxes,
         max_total_size=yolo_max_boxes,
         iou_threshold=yolo_iou_threshold,
         score_threshold=yolo_score_threshold
     )
+
     return boxes, scores, classes, valid_detections
 
 
 # --------------------------------------------------------------------------
-def YoloV3():
-    return 0
+def YoloV3(size=None, channels=3, anchors=yolo_anchors,
+           masks=yolo_anchor_masks, classes=4, training=False):
+    x = inputs = Input([size, size, channels], name='input')
+    x_36, x_61, x = Darknet(name='yolo_darknet')(x)
+
+    x = YoloConv(512, name='yolo_conv_0')(x)
+    output_0 = YoloOutput(512, len(masks[0]), classes, name='yolo_output_0')(x)
+
+    x = YoloConv(256, name='yolo_conv_1')((x, x_61))
+    output_1 = YoloOutput(256, len(masks[1]), classes, name='yolo_output_1')(x)
+
+    x = YoloConv(128, name='yolo_conv_2')((x, x_36))
+    output_2 = YoloOutput(128, len(masks[2]), classes, name='yolo_output_2')(x)
+
+    if training:
+        return Model(inputs, (output_0, output_1, output_2), name='yolo_v3')
+
+    boxes_0 = Lambda(lambda x: Yolo_Boxes(x, anchors[masks[0]], classes), name='yolo_boxes_0')(output_0)
+    boxes_1 = Lambda(lambda x: Yolo_Boxes(x, anchors[masks[1]], classes), name='yolo_boxes_1')(output_1)
+    boxes_2 = Lambda(lambda x: Yolo_Boxes(x, anchors[masks[2]], classes), name='yolo_boxes_2')(output_2)
+
+    outputs = Lambda(lambda x: Yolo_NMS(x, anchors, masks, classes),
+                     name='yolo_nms')((boxes_0[:3], boxes_1[:3], boxes_2[:3]))
+    return Model(inputs, outputs, name='yolo_v3')
+
+
+# --------------------------------------------------------------------------
+def YoloV3Tiny(size=None, channels=3, anchors=yolo_tiny_anchors, masks=yolo_tiny_anchor_masks
+               , classes=4, training=False):
+    x = inputs = Input(shape=[size, size, channels], name='tiny_input')
+    x_8, x = DarknetTiny(name='yolo_tiny_darknet')(x)
+
+    x = YoloConvTiny(256, name='yolo_tiny_conv_0')(x)
+    output_0 = YoloOutput(256, len(masks[0]), classes, name='yolo_tiny_output_0')(x)
+
+    x = YoloConvTiny(128, name='yolo_tiny_conv_1')((x, x_8))
+    output_1 = YoloOutput(128, len(masks[1]), classes, name='yolo_tiny_output_1')(x)
+
+    if training:
+        return Model(inputs, (output_0, output_1), name='yolo_tiny_v3')
+    boxes_0 = Lambda(lambda x: Yolo_Boxes(x, anchors[masks[0]], classes), name='yolo_tiny_boxes_0')(output_0)
+    boxes_1 = Lambda(lambda x: Yolo_Boxes(x, anchors[masks[1]], classes), name='yolo_tiny_boxes_1')(output_1)
+    outputs = Lambda(lambda x: Yolo_NMS(x, anchors, masks, classes), name='yolo_tiny_nms')((boxes_0[:3], boxes_1[:3]))
+    return Model(inputs, outputs, name='yolo_tiny_v3')
+
+
+# --------------------------------------------------------------------------
+def Yolo_Loss(anchors, classes=4, ignore_thresh=0.5):
+    pass
