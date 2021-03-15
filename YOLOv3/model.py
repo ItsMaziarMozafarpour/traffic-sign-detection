@@ -70,7 +70,7 @@ def DarknetBlock(x, filters, blocks):
 # --------------------------------------------------------------------------
 def Darknet(name=None):
     x = inputs = Input([None, None, 3])
-    x = DarknetConv(x, 32, 3, )
+    x = DarknetConv(x, 32, 3)
     x = DarknetBlock(x, 64, 1)
     x = DarknetBlock(x, 128, 2)
     x = x_36 = DarknetBlock(x, 256, 8)
@@ -153,16 +153,21 @@ def YoloOutput(filters, anchors, classes, name=None):
 
 # --------------------------------------------------------------------------
 def Yolo_Boxes(pred, anchors, classes):
+    # pred shape : (batch_size,grid,grid,anchors,(x,y,w,h,obj,classes))
     grid_size = tf.shape(pred)[1:3]
     bbox_xy, bbox_wh, objectness, class_probs = tf.split(pred, (2, 2, 1, classes), axis=-1)
+
     bbox_xy = tf.sigmoid(bbox_xy)
     objectness = tf.sigmoid(objectness)
     class_probs = tf.sigmoid(class_probs)
     pred_box = tf.concat((bbox_xy, bbox_wh), axis=-1)
+
     grid = tf.meshgrid(tf.range(grid_size[1]), tf.range(grid_size[0]))
     grid = tf.expand_dims(tf.stack(grid, axis=-1), axis=2)
+
     bbox_xy = (bbox_xy + tf.cast(grid, tf.float32)) / tf.cast(grid_size, tf.float32)
     bbox_wh = tf.exp(bbox_wh) * anchors
+
     bbox_x1y1 = bbox_xy - bbox_wh / 2
     bbox_x2y2 = bbox_xy + bbox_wh / 2
     bbox = tf.concat([bbox_x1y1, bbox_x2y2], axis=-1)
@@ -245,4 +250,52 @@ def YoloV3Tiny(size=None, channels=3, anchors=yolo_tiny_anchors, masks=yolo_tiny
 
 # --------------------------------------------------------------------------
 def Yolo_Loss(anchors, classes=4, ignore_thresh=0.5):
-    pass
+    def yolo_loss(y_true, y_pred):
+        # yolo_output = (batch_size,grid,grid,anchors,(x,y,w,h,obj,classes))
+        pred_box, pred_obj, pred_class, pred_xywh = Yolo_Boxes(y_pred, anchors, classes)
+        pred_xy = pred_xywh[..., 0:2]
+        pred_wh = pred_xywh[..., 2:4]
+        # y_true : (batch_size,grid,grid,anchors,(x1,y1,x2,y2,obj,cls))
+        true_box, true_obj, true_class_idx = tf.split(y_pred, (4, 1, 1), axis=-1)
+        true_xy = (true_box[..., 0:2] + true_box[..., 2:4]) / 2
+        true_wh = true_box[..., 2:4] - true_box[..., 0:2]
+
+        # higher weights for small boxes
+        box_loss_scale = 2 - true_wh[..., 0] * true_wh[..., 1]
+
+        # inverting the pred box equations
+        grid_size = tf.shape(y_true)[1]
+        grid = tf.meshgrid(tf.range(grid_size), tf.range(grid_size))
+        grid = tf.expand_dims(tf.stack(grid, axis=-1), axis=2)
+        true_xy = true_xy * tf.cast(grid, tf.float32) - tf.cast(grid, tf.float32)
+        true_wh = tf.math.log(true_wh / anchors)
+        true_wh = tf.where(tf.math.is_inf(true_wh), tf.zeros_like(true_wh), true_wh)
+
+        # claculate all masks
+        obj_mask = tf.squeeze(true_obj, axis=-1)
+
+        best_iou = tf.map_fn(lambda i:
+                             tf.reduce_max(
+                                 broadcast_IOU(i[0], tf.boolean_mask(i[1], tf.cast(i[2], tf.bool))), axis=-1),
+                             (pred_box, true_box, obj_mask),
+                             tf.float32)
+        ignore_mask = tf.cast(best_iou < ignore_thresh, tf.float32)
+
+        # calculate all losses
+        xy_loss = obj_mask * box_loss_scale * tf.reduce_sum(tf.square(true_xy - pred_xy), axis=-1)
+        wh_loss = obj_mask * box_loss_scale * tf.reduce_sum(tf.square(true_wh - pred_wh), axis=-1)
+        obj_loss = binary_crossentropy(true_obj, pred_obj)
+        obj_loss = obj_mask * obj_loss + (1 - obj_mask) * ignore_mask * obj_loss
+        class_loss = obj_mask * sparse_categorical_crossentropy(true_class_idx, pred_class)
+
+        # sum over (batch,grid_x,grid_y,anchors) => (batch,1)
+        xy_loss = tf.reduce_sum(xy_loss, axis=(1, 2, 3))
+        wh_loss = tf.reduce_sum(wh_loss, axis=(1, 2, 3))
+        obj_loss = tf.reduce_sum(obj_loss, axis=(1, 2, 3))
+        class_loss = tf.reduce_sum(class_loss, axis=(1, 2, 3))
+        return xy_loss + wh_loss + obj_loss + class_loss
+
+    return yolo_loss
+
+
+# --------------------------------------------------------------------------
