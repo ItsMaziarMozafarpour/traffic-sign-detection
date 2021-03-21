@@ -3,7 +3,7 @@ import tensorflow as tf
 from tensorflow.keras import Model
 from tensorflow.keras.layers import (
     Add,
-    concatenate,
+    Concatenate,
     Input,
     Conv2D,
     MaxPool2D,
@@ -106,7 +106,7 @@ def YoloConv(filters, name=None):
             x, x_skip = inputs
             x = DarknetConv(x, filters, 1)
             x = UpSampling2D(2)(x)
-            x = concatenate()([x, x_skip])
+            x = Concatenate()([x, x_skip])
         else:
             x = inputs = Input(x_in.shape[1:])
 
@@ -115,7 +115,7 @@ def YoloConv(filters, name=None):
         x = DarknetConv(x, filters, 1)
         x = DarknetConv(x, filters * 2, 3)
         x = DarknetConv(x, filters, 1)
-        return Model(inputs, x, name=x)(x_in)
+        return Model(inputs, x, name=name)(x_in)
 
     return yolo_conv
 
@@ -129,7 +129,7 @@ def YoloConvTiny(filters, name=None):
 
             x = DarknetConv(x, filters, 1)
             x = UpSampling2D(2)(x)
-            x = concatenate()([x, x_skip])
+            x = Concatenate()([x, x_skip])
         else:
             x = inputs = Input(x_in.shape[1:])
             x = DarknetConv(x, filters, 1)

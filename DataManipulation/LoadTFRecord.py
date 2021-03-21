@@ -31,7 +31,7 @@ def parse_tfrecord(tfrecord,class_tabel,size):
     labels = tf.cast(class_tabel.lookup(class_text),tf.float32)
     y_train = tf.stack([
         tf.sparse.to_dense(x['image/object/bbox/xmin']),
-        tf.sprse.to_dense(x['image/object/bbox/ymin']),
+        tf.sparse.to_dense(x['image/object/bbox/ymin']),
         tf.sparse.to_dense(x['image/object/bbox/xmax']),
         tf.sparse.to_dense(x['image/object/bbox/ymax']),
     labels],axis=1)
